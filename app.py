@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -44,28 +42,26 @@ def load_keras_model():
 def fetch_and_predict(model):
     tz = pytz.timezone("Asia/Kolkata")
     start_date = (datetime.now(tz) - timedelta(days=8)).strftime('%Y-%m-%d')
-    # end_date = datetime.now(tz).strftime('%Y-%m-%d')
-    end_date = '2025-11-12'
+    end_date = datetime.now(tz).strftime('%Y-%m-%d')
 
     aq_params = {"latitude": LAT, "longitude": LON, "hourly": "pm2_5", "timezone": "Asia/Kolkata", "start_date": start_date, "end_date": end_date}
     weather_params = {"latitude": LAT, "longitude": LON, "hourly": "temperature_2m,relative_humidity_2m,precipitation,pressure_msl,wind_speed_10m,wind_direction_10m,cloud_cover", "timezone": "Asia/Kolkata", "start_date": start_date, "end_date": end_date}
     
-    # --- ADDED ERROR HANDLING ---
+    # --- Error Handling ---
     aq_response = requests.get(AQ_URL, params=aq_params)
     if not aq_response.ok:
         st.error(f"Failed to fetch Air Quality data. API returned: {aq_response.text}")
-        st.stop() # Stop the script to prevent crashing
+        st.stop()
 
     weather_response = requests.get(WEATHER_URL, params=weather_params)
     if not weather_response.ok:
         st.error(f"Failed to fetch Weather data. API returned: {weather_response.text}")
-        st.stop() # Stop the script to prevent crashing
+        st.stop()
 
     aq_data = aq_response.json()
     weather_data = weather_response.json()
     
-    # --- ADDED A SECOND LAYER OF CHECK ---
-    # Sometimes an API gives a 200 OK but still sends an error in the JSON
+    # --- Additional Check ---
     if 'hourly' not in weather_data or 'hourly' not in aq_data:
         st.error("The data returned from the API was not in the expected format. Please check the logs.")
         st.write("Weather API Response:", weather_data)
@@ -73,13 +69,16 @@ def fetch_and_predict(model):
         st.stop()
 
     df_aq = pd.DataFrame(aq_data['hourly'])
+    # --- FIX: Rename 'pm2_5' to 'pm25' to match feature_order ---
+    df_aq = df_aq.rename(columns={'pm2_5': 'pm25'})
+    
     df_weather = pd.DataFrame(weather_data['hourly'])
     
     df = pd.merge(df_aq, df_weather, on='time')
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time').interpolate(method='linear', limit_direction='forward')
     
-    # (The rest of the function is the same...)
+    # Feature Engineering
     df["hour"] = df.index.hour
     df["day_of_week"] = df.index.dayofweek
     df["month"] = df.index.month
@@ -108,7 +107,7 @@ def fetch_and_predict(model):
     
     return input_df, forecast_df
 
-# --- Main Application UI (No changes here) ---
+# --- Main Application UI ---
 st.title("🌬️ Real-Time Noida Air Quality Forecast")
 st.markdown(f"Automatic 72-hour forecast using a Transformer model. Last updated: **{datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %I:%M %p')}**")
 
@@ -145,3 +144,4 @@ fig.add_trace(go.Scatter(x=forecast_df['Time'], y=forecast_df['Predicted PM2.5']
                          marker=dict(color=marker_colors, size=8, symbol='circle')))
 fig.update_layout(title="PM2.5 Forecast vs. Historical Data", xaxis_title="Date and Time", yaxis_title="PM2.5 (μg/m³)", legend_title="Legend")
 st.plotly_chart(fig, use_container_width=True)
+
