@@ -44,7 +44,8 @@ def load_keras_model():
 def fetch_and_predict(model):
     tz = pytz.timezone("Asia/Kolkata")
     start_date = (datetime.now(tz) - timedelta(days=8)).strftime('%Y-%m-%d')
-    end_date = datetime.now(tz).strftime('%Y-%m-%d')
+    # end_date = datetime.now(tz).strftime('%Y-%m-%d')
+    end_date = '2025-11-12'
 
     aq_params = {"latitude": LAT, "longitude": LON, "hourly": "pm2_5", "timezone": "Asia/Kolkata", "start_date": start_date, "end_date": end_date}
     weather_params = {"latitude": LAT, "longitude": LON, "hourly": "temperature_2m,relative_humidity_2m,precipitation,pressure_msl,wind_speed_10m,wind_direction_10m,cloud_cover", "timezone": "Asia/Kolkata", "start_date": start_date, "end_date": end_date}
