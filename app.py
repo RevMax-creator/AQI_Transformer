@@ -13,7 +13,7 @@ import pytz
 # --- Page Configuration ---
 st.set_page_config(
     page_title="Noida Air Quality Forecast",
-    page_icon="🌬️",
+    page_icon="https://raw.githubusercontent.com/RevMax-creator/AQI_Transformer/main/favicon.ico", 
     layout="wide",
 )
 
