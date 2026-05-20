@@ -96,6 +96,14 @@ def fetch_and_predict(model):
     })
     
     df_weather = pd.DataFrame(weather_data['hourly'])
+    df_weather = df_weather.rename(columns={
+        'temperature_2m': 'temperature',
+        'relative_humidity_2m': 'humidity',
+        'dew_point_2m': 'dew_point',
+        'wind_speed_10m': 'wind_speed',
+        'wind_direction_10m': 'wind_direction',
+        'wind_gusts_10m': 'wind_gusts'
+    })
     
     df = pd.merge(df_aq, df_weather, on='time')
     df['time'] = pd.to_datetime(df['time'])
@@ -115,11 +123,12 @@ def fetch_and_predict(model):
     
     # --- feature_order (23 features) ---
     feature_order = [
-        'pm25', 'pm10', 'no2', 'o3',  # Pollution
-        'temperature_2m', 'relative_humidity_2m', 'dew_point_2m', 'precipitation', 'rain', 
-        'pressure_msl', 'surface_pressure', 'wind_speed_10m', 'wind_direction_10m', 
-        'wind_gusts_10m', 'cloud_cover',  # Weather
-        'hour', 'day', 'month', 'day_of_week', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos'  # Temporal
+        'pm25', 'pm10', 'no2', 'o3', 
+        'temperature', 'humidity', 'dew_point', 'precipitation', 'rain', 
+        'pressure_msl', 'surface_pressure', 'wind_speed', 'wind_direction', 
+        'wind_gusts', 'cloud_cover', 
+        'hour', 'day', 'month', 'day_of_week', 
+        'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
     ]
     
     # Ensure all columns exist
