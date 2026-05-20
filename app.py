@@ -104,7 +104,7 @@ def fetch_and_predict(model):
         'wind_direction_10m': 'wind_direction',
         'wind_gusts_10m': 'wind_gusts'
     })
-    
+
     df = pd.merge(df_aq, df_weather, on='time')
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time').interpolate(method='linear', limit_direction='forward')
@@ -149,7 +149,7 @@ def fetch_and_predict(model):
     dummy_array[:, target_col_idx] = prediction_scaled[0, :]
     prediction_unscaled = scaler.inverse_transform(dummy_array)[:, target_col_idx]
     
-    forecast_times = pd.date_range(start=input_df.index[-1] + timedelta(hours=1), periods=OUTPUT_WINDOW, freq='H')
+    forecast_times = pd.date_range(start=input_df.index[-1] + timedelta(hours=1), periods=OUTPUT_WINDOW, freq='h')
     forecast_df = pd.DataFrame({'Time': forecast_times, 'Predicted PM2.5': prediction_unscaled})
     
     return input_df, forecast_df
