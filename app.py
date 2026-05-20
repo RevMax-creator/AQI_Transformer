@@ -53,11 +53,11 @@ def fetch_and_predict(model):
     start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=8)).strftime('%Y-%m-%d')
     
     # --- API Params (unchanged) ---
-    aq_params = 
+    aq_params = {
         "latitude": LAT, "longitude": LON, 
         "hourly": "pm10,pm2_5,nitrogen_dioxide,ozone",
         "timezone": "Asia/Kolkata", "start_date": start_date, "end_date": end_date
-    
+    }
     
     weather_params = {
         "latitude": LAT, "longitude": LON, 
