@@ -35,7 +35,7 @@ def get_aqi_category(pm25):
 # --- Caching Functions for Performance ---
 @st.cache_resource
 def load_keras_model():
-    model = load_model('noida_pm25_transformer.keras')
+    model = load_model('noida_pm25_transformer.keras', compile=False)
     return model
 
 @st.cache_data(ttl=3600)
