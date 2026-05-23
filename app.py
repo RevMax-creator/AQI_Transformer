@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
+import joblib
 import numpy as np
 import requests
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import MinMaxScaler
+# from sklearn.preprocessing import MinMaxScaler
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pytz
@@ -39,20 +40,21 @@ def load_keras_model():
     return model
 
 @st.cache_data(ttl=3600)
-def fetch_and_predict(model):
+def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing for keras model
     tz = pytz.timezone("Asia/Kolkata")
     now = datetime.now(tz)
     
-    # --- UPDATED LOGIC: Adjust end_date if before 9 AM IST ---
+    # --- Adjust end_date if before 9 AM IST ---
     if now.hour < 9:
-        end_date = (now - timedelta(days=1)).strftime('%Y-%m-%d')  # Use previous day
+        end_date = (now - timedelta(days=1)).strftime('%Y-%m-%d')
         st.info(f"Current time is before 9 AM IST. Using data up to {end_date} for complete daily coverage.")
     else:
-        end_date = now.strftime('%Y-%m-%d')  # Use today if 9 AM or later
+        end_date = now.strftime('%Y-%m-%d')
     
+    # Fetch 8 days back to give enough buffer to calculate the 24h rolling windows
     start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=8)).strftime('%Y-%m-%d')
     
-    # --- API Params (unchanged) ---
+    # --- API Params ---
     aq_params = {
         "latitude": LAT, "longitude": LON, 
         "hourly": "pm10,pm2_5,nitrogen_dioxide,ozone",
@@ -79,37 +81,36 @@ def fetch_and_predict(model):
     aq_data = aq_response.json()
     weather_data = weather_response.json()
     
-    # --- Additional Check ---
     if 'hourly' not in weather_data or 'hourly' not in aq_data:
-        st.error("The data returned from the API was not in the expected format. Please check the logs.")
-        st.write("Weather API Response:", weather_data)
-        st.write("Air Quality API Response:", aq_data)
+        st.error("The data returned from the API was not in the expected format.")
         st.stop()
 
     df_aq = pd.DataFrame(aq_data['hourly'])
-    # --- Rename pollution columns ---
-    df_aq = df_aq.rename(columns={
-        'pm2_5': 'pm25', 
-        'pm10': 'pm10', 
-        'nitrogen_dioxide': 'no2', 
-        'ozone': 'o3'
-    })
+    df_aq = df_aq.rename(columns={'pm2_5': 'pm25', 'pm10': 'pm10', 'nitrogen_dioxide': 'no2', 'ozone': 'o3'})
     
     df_weather = pd.DataFrame(weather_data['hourly'])
     df_weather = df_weather.rename(columns={
-        'temperature_2m': 'temperature',
-        'relative_humidity_2m': 'humidity',
-        'dew_point_2m': 'dew_point',
-        'wind_speed_10m': 'wind_speed',
-        'wind_direction_10m': 'wind_direction',
-        'wind_gusts_10m': 'wind_gusts'
+        'temperature_2m': 'temperature', 'relative_humidity_2m': 'humidity',
+        'dew_point_2m': 'dew_point', 'wind_speed_10m': 'wind_speed',
+        'wind_direction_10m': 'wind_direction', 'wind_gusts_10m': 'wind_gusts'
     })
 
     df = pd.merge(df_aq, df_weather, on='time')
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time').interpolate(method='linear', limit_direction='forward')
     
-    # --- Feature Engineering ---
+    # ---------------------------------------------------------
+    # FIX 1: Calculate Rolling Features BEFORE slicing the window
+    # ---------------------------------------------------------
+    df['pm25_rolling_mean_24h'] = df['pm25'].rolling(window=24).mean()
+    df['pm25_rolling_std_24h'] = df['pm25'].rolling(window=24).std()
+    df['wind_speed_drop_6h'] = df['wind_speed'].diff(periods=6)
+    df['temp_drop_6h'] = df['temperature'].diff(periods=6)
+    
+    # Backfill the first 24 hours of NaNs to avoid dropping data
+    df = df.bfill().ffill()
+
+    # Time Features
     df["hour"] = df.index.hour
     df["day"] = df.index.day
     df["month"] = df.index.month
@@ -119,41 +120,51 @@ def fetch_and_predict(model):
     df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
     df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
     
-    input_df = df.tail(INPUT_WINDOW)
+    # Now extract exactly the last 7 days (168 hours) for the model
+    input_df = df.tail(INPUT_WINDOW).copy()
     
-    # --- feature_order (23 features) ---
-    feature_order = [
-        'pm25', 'pm10', 'no2', 'o3', 
-        'temperature', 'humidity', 'dew_point', 'precipitation', 'rain', 
-        'pressure_msl', 'surface_pressure', 'wind_speed', 'wind_direction', 
-        'wind_gusts', 'cloud_cover', 
+    # Define exact feature splits
+    continuous_cols = [
+        'pm25', 'pm10', 'no2', 'o3', 'temperature', 'humidity',
+        'dew_point', 'precipitation', 'rain', 'pressure_msl',
+        'surface_pressure', 'wind_speed', 'wind_direction', 'wind_gusts', 'cloud_cover',
+        'pm25_rolling_mean_24h', 'pm25_rolling_std_24h', 'wind_speed_drop_6h', 'temp_drop_6h'
+    ]
+    
+    cyclical_cols = [
         'hour', 'day', 'month', 'day_of_week', 
         'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
     ]
     
-    # Ensure all columns exist
-    missing_cols = [col for col in feature_order if col not in input_df.columns]
-    if missing_cols:
-        st.error(f"Missing columns in data: {missing_cols}. This indicates an API or processing issue.")
-        st.stop()
+    feature_order = continuous_cols + cyclical_cols
     
-    input_df_ordered = input_df[feature_order]
-    scaler = MinMaxScaler().fit(input_df_ordered)
-    data_scaled = scaler.transform(input_df_ordered)
+    # ---------------------------------------------------------
+    # FIX 2: Apply scaler ONLY to continuous columns
+    # ---------------------------------------------------------
+    scaler = joblib.load('transformer_scaler.pkl')
+    input_df[continuous_cols] = scaler.transform(input_df[continuous_cols])
     
-    input_tensor = np.expand_dims(data_scaled, axis=0)
-    prediction_scaled = model.predict(input_tensor)
+    # Ensure correct column ordering for the neural network
+    final_input_data = input_df[feature_order].values
+    input_tensor = np.expand_dims(final_input_data, axis=0)
     
-    target_col_idx = feature_order.index('pm25')
-    dummy_array = np.zeros((OUTPUT_WINDOW, len(feature_order)))
-    dummy_array[:, target_col_idx] = prediction_scaled[0, :]
-    prediction_unscaled = scaler.inverse_transform(dummy_array)[:, target_col_idx]
+    # Predict
+    prediction_scaled = _model.predict(input_tensor)
+    
+    # ---------------------------------------------------------
+    # FIX 3: Dummy array must match the 19 continuous columns
+    # ---------------------------------------------------------
+    target_scaler_idx = continuous_cols.index('pm25') # This will be index 0
+    dummy_array = np.zeros((OUTPUT_WINDOW, len(continuous_cols))) 
+    
+    dummy_array[:, target_scaler_idx] = prediction_scaled[0, :]
+    prediction_unscaled = scaler.inverse_transform(dummy_array)[:, target_scaler_idx]
     
     forecast_times = pd.date_range(start=input_df.index[-1] + timedelta(hours=1), periods=OUTPUT_WINDOW, freq='h')
     forecast_df = pd.DataFrame({'Time': forecast_times, 'Predicted PM2.5': prediction_unscaled})
     
     return input_df, forecast_df
-
+    
 # --- Main Application UI ---
 st.title("🌬️ Real-Time Noida Air Quality Forecast")
 st.markdown(f"Automatic 72-hour forecast using a Transformer model. Last updated: **{datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %I:%M %p')}**")
