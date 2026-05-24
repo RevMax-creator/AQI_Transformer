@@ -122,6 +122,7 @@ def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing fo
     
     # Now extract exactly the last 7 days (168 hours) for the model
     input_df = df.tail(INPUT_WINDOW).copy()
+    historical_pm25_raw = input_df['pm25'].copy()
     
     # Define exact feature splits
     continuous_cols = [
@@ -142,6 +143,7 @@ def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing fo
     # ---------------------------------------------------------
     scaler = joblib.load('transformer_scaler.pkl')
     input_df[continuous_cols] = scaler.transform(input_df[continuous_cols])
+    input_df['pm25'] = historical_pm25_raw
     
     # Ensure correct column ordering for the neural network
     final_input_data = input_df[feature_order].values
