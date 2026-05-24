@@ -143,12 +143,12 @@ def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing fo
     # ---------------------------------------------------------
     scaler = joblib.load('transformer_scaler.pkl')
     input_df[continuous_cols] = scaler.transform(input_df[continuous_cols])
-    input_df['pm25'] = historical_pm25_raw
     
     # Ensure correct column ordering for the neural network
     final_input_data = input_df[feature_order].values
     input_tensor = np.expand_dims(final_input_data, axis=0)
     
+    input_df['pm25'] = historical_pm25_raw
     # Predict
     prediction_scaled = _model.predict(input_tensor)
     
