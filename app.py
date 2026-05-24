@@ -132,7 +132,6 @@ def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing fo
     ]
     
     cyclical_cols = [
-        'hour', 'day', 'month', 'day_of_week', 
         'hour_sin', 'hour_cos', 'month_sin', 'month_cos'
     ]
     
@@ -164,7 +163,7 @@ def fetch_and_predict(_model): # Added underscore to bypass Streamlit hashing fo
     forecast_df = pd.DataFrame({'Time': forecast_times, 'Predicted PM2.5': prediction_unscaled})
     
     return input_df, forecast_df
-    
+
 # --- Main Application UI ---
 st.title("🌬️ Real-Time Noida Air Quality Forecast")
 st.markdown(f"Automatic 72-hour forecast using a Transformer model. Last updated: **{datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %I:%M %p')}**")
